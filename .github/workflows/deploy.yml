@@ -1,0 +1,50 @@
+# Nama workflow yang akan muncul di tab Actions GitHub
+name: Deploy HTML to EC2
+
+# Workflow ini akan berjalan setiap ada push ke branch "main"
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy: # Job bernama "deploy"
+    runs-on: ubuntu-latest # Menentukan runner yang digunakan (Ubuntu versi terbaru)
+
+    steps:
+      # Step 1: Checkout repository dari Github ke dalam runner
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Step 2: SSH ke server EC2 dan update website
+      - name: SSH into EC2 and update site
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          # Gunakan secrets untuk menyimpan credential secara aman
+          # Siapkan Secrets di Github repo (Di GitHub repo → Settings → Secrets and variables → Actions → New repository secret)
+          # EC2_HOST = Public IP EC2 (dari output Terraform)
+          # EC2_USER = ec2-user (misalnya ec2-user seusaikan dengan username EC2 masing-masing)
+          # EC2_KEY = isi penuh file keys/test_tf (Private SSH key untuk login EC2)
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e # Hentikan eksekusi jika ada error
+
+            # Pastikan folder web bisa ditulis oleh user EC2
+            sudo chown -R ec2-user:ec2-user /var/www/html || true
+
+            # Jika folder sudah ada dan merupakan repo git → update dengan git pull
+            if [ -d "/var/www/html/site/.git" ]; then
+              cd /var/www/html/site
+              git pull
+            else
+              # Jika belum ada → hapus folder lama dan clone repo baru
+              rm -rf /var/www/html/site
+              git clone https://github.com/${{ github.repository }} /var/www/html/site
+            fi
+
+            # Copy file test.html menjadi index.html untuk halaman utama
+            sudo cp -f /var/www/html/site/test.html /var/www/html/index.html
+
+            # Restart Apache (httpd) agar perubahan langsung diterapkan
+            sudo systemctl restart httpd
